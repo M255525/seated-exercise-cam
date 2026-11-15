@@ -12,6 +12,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
 <style>
 :root{
   --sky:#fff4d6; --sun:#ffb627; --leaf:#2f6b3f; --leaf2:#4f9a5c; --grass:#dff0cf; --card:#fffdf6; --ink:#24301f; --sub:#5d6a55; --line:#e4dcc2;
@@ -87,6 +90,24 @@ h1,h2,h3{margin:0;line-height:1.3;font-weight:900}
 .pane .hd span{font-size:.8rem;opacity:.9}
 .figbox{position:relative;aspect-ratio:4/3;background:linear-gradient(180deg,#fff7e0,#eef7e3)}
 .figbox canvas{display:block;width:100%;height:100%}
+.d3{position:absolute;inset:0}
+.d3:empty{display:none}
+.has3d #fig,.has3d #figI{display:none}
+/* 示範影片 */
+.vid{position:relative;width:min(44rem,100%);aspect-ratio:4/3;max-height:52vh;border-radius:1.2rem;overflow:hidden;background:#fff4d6;box-shadow:0 10px 30px rgba(40,60,30,.25);margin:.6rem auto 0}
+.vid canvas#figI{display:block;width:100%;height:100%}
+.vid .tag{position:absolute;left:.7rem;top:.6rem;background:var(--red);color:#fff;border-radius:.6rem;padding:.1rem .6rem;font-size:.8rem}
+.vid .vcd{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:7rem;font-weight:900;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.45);background:rgba(36,48,31,.25)}
+.vbar{position:absolute;left:0;right:0;bottom:0;height:.45rem;background:rgba(0,0,0,.15)}
+.vbar i{display:block;height:100%;width:0;background:var(--sun)}
+.vcap{max-width:44rem;margin:.6rem auto 0;font-size:1.15rem;line-height:1.5}
+.vbtns{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-top:.7rem}
+.vbtns .big{width:auto;margin-top:0;min-height:3.6rem;padding:.4rem 1.4rem}
+.overlay.intro{justify-content:flex-start;overflow:auto;padding-top:calc(.8rem + var(--mq))}
+.overlay.intro h2{font-size:clamp(1.5rem,5vw,2.4rem)}
+.mlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,10rem),1fr));gap:.5rem;margin-top:.6rem}
+.mlist button{border:3px solid var(--line);background:var(--card);border-radius:.9rem;padding:.5rem;min-height:3.4rem;font-weight:900;font-size:1rem}
+.mlist button[aria-pressed="true"]{border-color:var(--leaf);background:#f2fbea}
 .howto{padding:.6rem .9rem .8rem;font-size:1.05rem}
 .howto .small{display:block;margin-top:.2rem}
 .cambox{position:relative;aspect-ratio:4/3;background:#1d2a1a}
@@ -157,6 +178,7 @@ h1,h2,h3{margin:0;line-height:1.3;font-weight:900}
 <video id="cam" playsinline muted hidden></video>
 <noscript>這個工具需要開啟 JavaScript 才能使用。</noscript>
 <script src="engine.js"></script>
+<script src="demo3d.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

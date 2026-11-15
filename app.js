@@ -17,7 +17,7 @@ var toastT;
 function toast(s){ var t = document.querySelector('.toast'); if(!t){ t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); } t.textContent = s; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(function(){ t.hidden = true; }, 2800); }
 
 /* ---------- 設定 ---------- */
-var SET = Object.assign({voice:true, rate:'slow', rest:10, fs:'m', skel:true, course:'warm'}, lsJson('set', {}));
+var SET = Object.assign({voice:true, rate:'slow', rest:10, fs:'m', skel:true, course:'warm', sens:'std', demo:true}, lsJson('set', {}));
 function saveSet(){ lsSet('set', JSON.stringify(SET)); }
 function applyView(){ document.documentElement.dataset.fs = SET.fs === 'xl' ? 'xl' : 'm'; }
 var CUSTOM = lsJson('custom', E.MOVES.map(function(m){ return [m.id, m.id === 'march' || m.id === 'altArms' ? 0 : 8]; }));
@@ -140,14 +140,24 @@ function startRun(){
 function cur(){ return R && E.moveById[R.plan[R.i].id]; }
 function introMove(){
   var m = cur(), st = R.plan[R.i];
-  R.phase = 'intro'; R.count = 0; R.counter = R.mode === 'cam' ? E.makeCounter(m.id) : null; R.stall = false; R.moveBeat = false; R.missMs = 0;
+  R.phase = 'intro'; R.count = 0; R.counter = R.mode === 'cam' ? E.makeCounter(m.id, {sens:SET.sens}) : null; R.stall = false; R.moveBeat = false; R.missMs = 0;
   var txt = (R.i === 0 ? '我們開始囉。' : '下一個動作，') + '第' + E.zhNum(R.i + 1) + '個：' + m.n + '，做' + E.zhNum(st.n) + '次。' + m.say;
-  R.introMs = SET.voice ? Math.max(5200, Array.from(txt).length * (SET.rate === 'slow' ? 270 : 230) + 1800) : 5200;   // 口令唸完再開始
-  R.until = performance.now() + R.introMs;
+  // 先看示範影片：至少完整示範兩次、口令唸完，最後 3 秒倒數
+  var speech = SET.voice ? Array.from(txt).length * (SET.rate === 'slow' ? 270 : 230) + 600 : 0, demo = SET.demo ? 2 * m.tempo * 1000 + 600 : 2000;
+  R.introMs = Math.max(speech, demo) + 3000;
+  R.introAt = performance.now(); R.until = R.introAt + R.introMs;
   say(txt, true);
-  render();
+  render(); demoTo('demoIntro', m);
 }
-function goMove(){ R.phase = 'go'; R.lastRep = performance.now(); R.beatAt = performance.now(); beep(660, .25); render(); }
+// 3D 示範老師：搬到指定的容器並換動作（3D 載入失敗就用 2D 小人）
+function demoTo(id, m){
+  var el = $(id); if(!el) return false;
+  if(!(window.Demo3D && Demo3D.ready)) return false;
+  Demo3D.attach(el); Demo3D.show(m.id, m.tempo); Demo3D.setPhase(null);
+  var box = el.closest('.figbox,.vid'); if(box) box.classList.add('has3d');
+  return true;
+}
+function goMove(){ R.phase = 'go'; R.lastRep = performance.now(); R.beatAt = performance.now(); beep(660, .25); render(); demoTo('demoRun', cur()); }
 function addRep(){
   if(!R || R.phase !== 'go') return;
   R.count++; R.reps++; R.lastRep = performance.now(); R.stall = false;
@@ -183,8 +193,17 @@ function loop(){
   if(R.phase === 'go') R.active += dt;
   // 示範小人：跟著節拍來回
   var u = (1 - Math.cos(((now - R.beatAt) / (m.tempo * 1000)) * Math.PI * 2)) / 2;
-  drawFigure($('fig'), m.id, R.phase === 'go' || R.phase === 'intro' ? u : 0);
-  if(R.phase === 'intro'){ var left = Math.ceil((R.until - now) / 1000); var c = $('cdNum'); if(c) c.textContent = left > 3 ? '準備' : Math.max(1, left); if(now >= R.until) goMove(); return; }
+  if(!(window.Demo3D && Demo3D.ready)){ drawFigure($('fig'), m.id, R.phase === 'go' || R.phase === 'intro' ? u : 0); drawFigure($('figI'), m.id, (1 - Math.cos(((now - (R.introAt || 0)) / (m.tempo * 1000)) * Math.PI * 2)) / 2); }
+  else if(R.phase === 'go' && (R.mode !== 'cam' || R.moveBeat)){ var cy = Demo3D.cycles(m.id); Demo3D.setPhase(((R.count % cy) + Math.min(1, (now - R.beatAt) / (m.tempo * 1000))) / cy); }
+  // 說明與倒數時，鏡頭先暖機（量肩寬、學起始值），這段時間的動作不計數
+  if(R.phase === 'intro' && R.mode === 'cam' && R.counter){ var lm1 = detect(); drawSkel($('skel'), lm1); R.counter.update(E.pick(lm1, aspect()), now / 1000); R.counter.count = 0; }
+  if(R.phase === 'intro'){
+    var leftMs = R.until - now, c = $('cdNum'), pg = $('vprog');
+    if(pg) pg.style.width = Math.min(100, (now - R.introAt) / Math.max(1, R.introMs - 3000) * 100) + '%';
+    if(c){ var show = leftMs <= 3000; c.hidden = !show; if(show) c.textContent = Math.max(1, Math.ceil(leftMs / 1000)); if(show && !R.cdSaid){ R.cdSaid = true; say('準備，三、二、一', false); } }
+    if(now >= R.until){ R.cdSaid = false; goMove(); }
+    return;
+  }
   if(R.phase === 'rest'){ var r = $('restNum'); if(r) r.textContent = Math.max(0, Math.ceil((R.until - now) / 1000)); if(now >= R.until) nextMove(); return; }
   if(R.mode === 'cam'){ var lm = detect(); drawSkel($('skel'), lm); }
   if(R.mode === 'cam' && !R.moveBeat){
@@ -223,7 +242,8 @@ function homeView(){
 function pickView(){
   return topBar() + '<section class="card"><h2>選一個課程</h2>' +
     E.COURSES.map(function(c){ var pl = planOf(c.id); return '<button class="course" data-course="' + c.id + '" aria-pressed="' + (SET.course === c.id) + '"><span class="ic">' + c.ic + '</span><b>' + esc(c.n) + '・約 ' + E.courseMinutes(pl.map(function(p){ return [p.id, p.n]; }), SET.rest) + ' 分鐘</b><span>' + esc(c.d) + '</span></button>'; }).join('') +
-    '<button class="course" data-course="custom" aria-pressed="' + (SET.course === 'custom') + '"><span class="ic">⭐</span><b>我的課程</b><span>自己挑動作和次數</span></button></section>' +
+    '<button class="course" data-course="custom" aria-pressed="' + (SET.course === 'custom') + '"><span class="ic">⭐</span><b>我的課程</b><span>自己挑動作和次數</span></button>' +
+    '<button class="big alt" data-act="demos" style="margin-top:.9rem">🎬 先看 7 個動作的 3D 示範</button></section>' +
     (SET.course === 'custom' ? '<section class="card"><h2 style="font-size:1.2rem">我的課程：要做哪些動作？</h2>' + CUSTOM.map(function(c, i){ var m = E.moveById[c[0]]; return '<div class="mv"><label><input type="checkbox" data-cus="' + i + '"' + (c[1] > 0 ? ' checked' : '') + '>' + m.ic + ' ' + esc(m.n) + '</label><select data-cusn="' + i + '" aria-label="次數">' + [5, 8, 10, 15, 20].map(function(n){ return '<option value="' + n + '"' + ((c[1] || 8) === n ? ' selected' : '') + '>' + n + ' 次</option>'; }).join('') + '</select></div>'; }).join('') + '</section>' : '') +
     '<button class="big" data-act="home">✓ 好，就這個</button>' + footer();
 }
@@ -248,14 +268,17 @@ function runView(){
   var m = cur(), st = R.plan[R.i];
   var h = '<div class="top"><h1>🪑 ' + esc(courseName(SET.course)) + '</h1><span class="small">第 ' + (R.i + 1) + ' / ' + R.plan.length + ' 個動作</span></div>' +
     '<div class="dots">' + R.plan.map(function(p, i){ return '<i class="' + (i < R.i ? 'done' : i === R.i ? 'cur' : '') + '" title="' + esc(E.moveById[p.id].n) + '"></i>'; }).join('') + '</div>' +
-    '<div class="stage"><div class="pane"><div class="hd"><b>' + m.ic + ' ' + esc(m.n) + '</b><span>做 ' + st.n + ' 次</span></div><div class="figbox"><canvas id="fig"></canvas></div><div class="howto">' + esc(m.say) + '<span class="small">' + esc(m.how) + '　💡 ' + esc(m.tip) + '</span></div></div>';
+    '<div class="stage"><div class="pane"><div class="hd"><b>' + m.ic + ' ' + esc(m.n) + '</b><span>做 ' + st.n + ' 次</span></div><div class="figbox"><div class="d3" id="demoRun"></div><canvas id="fig"></canvas></div><div class="howto">' + esc(m.say) + '<span class="small">' + esc(m.how) + '　💡 ' + esc(m.tip) + '</span></div></div>';
   if(R.mode === 'cam') h += '<div class="pane"><div class="cambox" id="camBox"><canvas id="skel"></canvas><div class="counter" id="cnt"><b id="cntNum">' + R.count + '</b><span>/ ' + st.n + ' 次</span></div>' +
     (R.moveBeat ? '<div class="camhint">🎵 鏡頭看不清楚這個動作，改成跟著「一、二、三…」做<div class="ring" style="margin:.35rem auto 0"><i id="beatBar"></i></div></div>' : '<div class="camhint" id="camHint"></div>') + '</div></div>';
   else h += '<div class="pane"><div class="beat"><b id="cntNum">' + R.count + '</b><span>/ ' + st.n + ' 次</span><div class="ring"><i id="beatBar"></i></div><span class="small" style="margin-top:.4rem">跟著「一、二、三…」做</span></div></div>';
   h += '</div>' + (R.stall ? '<div class="stall">🤔 鏡頭好像沒有數到。確認上半身都在畫面裡；也可以按「＋1」自己數，或「改跟節拍做」。</div>' : '') +
     '<div class="ctl"><button class="big alt" data-act="pause">' + (R.paused ? '▶ 繼續' : '⏸ 暫停') + '</button><button class="big alt" data-act="plus">＋1</button><button class="big alt" data-act="' + (R.mode === 'cam' ? 'toBeat' : 'skip') + '">' + (R.mode === 'cam' ? '🎵 改跟節拍' : '⏭ 下一個') + '</button><button class="big red" data-act="quit">✖ 結束</button></div>';
   if(R.mode === 'cam') h += '<div class="ctl" style="grid-template-columns:1fr"><button class="big alt" data-act="skip">⏭ 跳過這個動作</button></div>';
-  if(R.phase === 'intro') h += '<div class="overlay"><div class="small">第 ' + (R.i + 1) + ' 個動作</div><h2>' + m.ic + ' ' + esc(m.n) + '</h2><p>' + esc(m.say) + '<br>做 <b>' + st.n + '</b> 次</p><div class="cd" id="cdNum">準備</div></div>';
+  if(R.phase === 'intro') h += '<div class="overlay intro"><div class="small">第 ' + (R.i + 1) + ' / ' + R.plan.length + ' 個動作・先看示範</div><h2>' + m.ic + ' ' + esc(m.n) + '・做 ' + st.n + ' 次</h2>' +
+    '<div class="vid"><div class="d3" id="demoIntro"></div><canvas id="figI"></canvas><span class="tag">🎬 示範</span><div class="vcd" id="cdNum" hidden></div><div class="vbar"><i id="vprog"></i></div></div>' +
+    '<div class="vcap">' + esc(m.say) + '<br><span class="small">' + esc(m.how) + '　💡 ' + esc(m.tip) + '</span></div>' +
+    '<div class="vbtns"><button class="big alt" data-act="replay">↻ 再看一次</button><button class="big sun" data-act="startNow">我會了，開始 ▶</button></div></div>';
   if(R.phase === 'rest'){ var nx = E.moveById[R.plan[R.i + 1].id]; h += '<div class="overlay"><h2>休息一下 😊</h2><p>慢慢吸氣、吐氣，喝口水。</p><div class="cd" id="restNum">' + SET.rest + '</div><p>下一個：' + nx.ic + ' ' + esc(nx.n) + '</p><button class="big" data-act="restSkip">我好了，繼續</button></div>'; }
   if(R.paused) h += '<div class="overlay"><h2>暫停中</h2><p>休息夠了再繼續。</p><button class="big" data-act="pause">▶ 繼續</button><button class="big red" data-act="quit">✖ 結束今天的操</button></div>';
   return h;
@@ -278,13 +301,25 @@ function logView(){
     '<div class="stat"><div><b>' + mDays + '</b><span>天有做操</span></div><div><b>' + Math.round(mSec / 60) + '</b><span>分鐘</span></div><div><b>' + E.streak(log, E.dayKey()) + '</b><span>天連續</span></div></div><div class="cal">' + cells + '</div>' +
     '<p class="small">紀錄只存在這台裝置。</p></section><button class="big" data-act="home">🏠 回首頁</button>' + footer();
 }
+function demoView(){
+  var m = E.moveById[V.demo];
+  return topBar() + '<section class="card"><h2>🎬 動作示範</h2><p class="lead">點一個動作看 3D 示範。老師是照鏡子的方向：老師舉畫面左邊的手，你就舉你的左手。</p>' +
+    '<div class="mlist">' + E.MOVES.map(function(x){ return '<button data-act="demoPick" data-id="' + x.id + '" aria-pressed="' + (x.id === V.demo) + '">' + x.ic + ' ' + esc(x.n) + '</button>'; }).join('') + '</div>' +
+    '<div class="vid"><div class="d3" id="demoGal"></div><canvas id="figI"></canvas><span class="tag">🎬 ' + esc(m.n) + '</span></div>' +
+    '<div class="vcap">' + esc(m.say) + '<br><span class="small">' + esc(m.how) + '　💡 ' + esc(m.tip) + '</span></div>' +
+    '<div class="vbtns"><button class="big alt" data-act="demoSay">🔊 聽說明</button><button class="big" data-act="pick">✓ 回到課程</button></div></section>' + footer();
+}
 function render(){
-  var h = V.scr === 'home' ? homeView() : V.scr === 'pick' ? pickView() : V.scr === 'ready' ? readyView() : V.scr === 'run' ? runView() : V.scr === 'done' ? doneView() : logView();
+  var h = V.scr === 'home' ? homeView() : V.scr === 'pick' ? pickView() : V.scr === 'demo' ? demoView() : V.scr === 'ready' ? readyView() : V.scr === 'run' ? runView() : V.scr === 'done' ? doneView() : logView();
   $('app').innerHTML = h;
   var box = $('camBox'); if(box){ video.hidden = false; box.insertBefore(video, box.firstChild); } else { video.hidden = true; document.body.appendChild(video); }
   if(V.scr === 'home') drawFigure($('fig'), 'armsUp', .5);
+  if(V.scr === 'demo' && !demoTo('demoGal', E.moveById[V.demo])) startGal2D();
+  if(V.scr === 'run' && R){ if(R.phase === 'intro') demoTo('demoIntro', cur()); else demoTo('demoRun', cur()); }
   if(V.scr === 'ready' && V.mode === 'cam') fillCamSel();
 }
+var galT = 0;
+function startGal2D(){ cancelAnimationFrame(galT); (function f(){ if(V.scr !== 'demo' || (window.Demo3D && Demo3D.ready)) return; var m = E.moveById[V.demo]; drawFigure($('figI'), m.id, (1 - Math.cos(performance.now() / (m.tempo * 1000) * Math.PI * 2)) / 2); galT = requestAnimationFrame(f); })(); }
 async function fillCamSel(){
   var cams = await listCams(), el = $('camSel'); if(!el || cams.length < 2) return;
   var curId = stream && stream.getVideoTracks()[0] ? stream.getVideoTracks()[0].getSettings().deviceId : '';
@@ -312,6 +347,11 @@ var ACT = {
   plus:function(){ if(R && R.phase === 'go'){ if(R.counter) R.counter.count = R.count + 1; addRep(); } },
   skip:function(){ if(!R) return; if(R.phase === 'intro' || R.phase === 'go') finishMove(); },
   restSkip:function(){ if(R && R.phase === 'rest') nextMove(); },
+  replay:function(){ if(!R || R.phase !== 'intro') return; var m = cur(); R.introAt = performance.now(); R.until = R.introAt + R.introMs; R.cdSaid = false; if(window.Demo3D && Demo3D.ready) Demo3D.restart(); say(m.say, true); },
+  startNow:function(){ if(!R || R.phase !== 'intro') return; var now = performance.now(); if(R.until - now > 3000){ R.until = now + 3000; R.introAt = now - (R.introMs - 3000); } try{ speechSynthesis.cancel(); }catch(e){} },
+  demos:function(){ V.scr = 'demo'; V.demo = V.demo || 'armsUp'; render(); window.scrollTo(0, 0); },
+  demoPick:function(el){ V.demo = el.dataset.id; render(); },
+  demoSay:function(){ var m = E.moveById[V.demo]; say(m.n + '。' + m.say + m.tip, true); if(window.Demo3D && Demo3D.ready) Demo3D.restart(); },
   toBeat:function(){ if(!R) return; R.mode = 'beat'; R.counter = null; R.beatAt = performance.now(); R.stall = false; stopCamera(); V.mode = 'beat'; lsSet('mode', 'beat'); say('好，改成跟著節拍做。', true); render(); },
   pause:function(){ if(!R) return; R.paused = !R.paused; if(!R.paused){ R.lastTick = performance.now(); R.beatAt = performance.now(); if(R.phase !== 'go') R.until = performance.now() + (R.phase === 'rest' ? SET.rest * 1000 : 4200); } else { try{ speechSynthesis.cancel(); }catch(e){} } render(); },
   quit:function(){ quitRun(); },
@@ -357,6 +397,8 @@ function openSettings(openId){
     sec('voice', '🔊 語音口令', SET.voice ? '開' : '關', seg('voice', [[true, '開'], [false, '關']]) + '<div style="margin-top:.5rem">' + seg('rate', [['slow', '說慢一點'], ['normal', '一般速度']]) + '</div>' + (window.speechSynthesis ? '' : '<p class="small">這個瀏覽器不支援語音。</p>'), openId === 'voice' || openId === 'rate') +
     sec('fs', '🔠 字的大小', SET.fs === 'xl' ? '特大' : '大', seg('fs', [['m', '大'], ['xl', '特大']]), openId === 'fs') +
     sec('rest', '☕ 動作之間休息', SET.rest + ' 秒', seg('rest', [[5, '5 秒'], [10, '10 秒'], [15, '15 秒'], [20, '20 秒']]), openId === 'rest') +
+    sec('sens', '🎯 鏡頭數次數的靈敏度', {easy:'容易數', std:'標準', strict:'嚴格'}[SET.sens] || '標準', '<p class="small">動作幅度比較小（例如肩膀聳不高）選「容易數」；常常多數就選「嚴格」。</p>' + seg('sens', [['easy', '容易數'], ['std', '標準'], ['strict', '嚴格']]), openId === 'sens') +
+    sec('demo', '🎬 每個動作先看示範影片', SET.demo ? '看完再做' : '只看一下', '<p class="small">「看完再做」：每個動作至少示範兩次才開始。「只看一下」：口令唸完就開始。</p>' + seg('demo', [[true, '看完再做'], [false, '只看一下']]), openId === 'demo') +
     sec('skel', '🦴 鏡頭畫面顯示骨架線', SET.skel ? '顯示' : '不顯示', seg('skel', [[true, '顯示'], [false, '不顯示']]), openId === 'skel') +
     sec('wipe', '🧹 清除紀錄與設定', '', '<p class="small">清掉這台裝置上的做操紀錄、我的課程與設定。</p><button class="sbtn" data-act="wipe">清除</button>') +
     sec('about', 'ℹ 關於本工具', '', '<p>👤 創作者 Mark Tsai（蔡豐全）<br><a href="mailto:tsaimark@gmail.com">tsaimark@gmail.com</a></p><div class="seg"><a class="sbtn" href="manual.html" style="text-decoration:none;color:inherit">📖 操作手冊</a><a class="sbtn" href="manual.html#creator" style="text-decoration:none;color:inherit">👤 創作者資訊</a><button class="sbtn" data-act="warn">⚠ 使用警語</button>' + (standalone ? '' : '<button class="sbtn" data-act="install">📲 加入主畫面</button>') + '</div><p class="small">訪客數 <img src="' + BADGE + '" alt="訪客次數" height="20" loading="lazy" style="vertical-align:middle"></p>') +
@@ -381,6 +423,7 @@ function initMarquee(){
 window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window._dp = e; });
 if('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('service-worker.js').catch(function(){});
 applyView(); render(); loop();
+if(window.Demo3D) setTimeout(function(){ Demo3D.load().then(function(){ if(V.scr === 'run' || V.scr === 'demo') render(); }).catch(function(e){ console.warn('3D 示範載入失敗，改用 2D', e); }); }, 300);
 if(!lsGet('warnSeen', '')){ lsSet('warnSeen', '1'); showWarn(); }
 initMarquee();
 window._sex = {V:V, get R(){ return R; }, ACT:ACT, E:E, SET:SET, addRep:addRep, render:render};

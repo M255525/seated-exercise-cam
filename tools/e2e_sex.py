@@ -22,7 +22,7 @@ def skip_intro(pg):
     pg.wait_for_timeout(250)
 
 with sync_playwright() as p:
-    b = p.chromium.launch(args=['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'])
+    b = p.chromium.launch(args=['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
     ctx = b.new_context(viewport={'width': 1280, 'height': 860}, permissions=['camera'])
     t = ctx.new_page(); stub(t, 'D')
     t.goto(BASE, wait_until='domcontentloaded'); t.wait_for_timeout(800)
@@ -44,8 +44,29 @@ with sync_playwright() as p:
     t.click('[data-act=ready]'); t.wait_for_timeout(300); t.click('[data-mode=beat]'); t.wait_for_timeout(200)
     t.click('[data-act=go]'); t.wait_for_timeout(400)
     check(t.is_visible('.overlay') and '拍拍手' in t.inner_text('.overlay'), '動作開始前的說明畫面')
+    # 3D 示範影片
+    try:
+        t.wait_for_function('window.Demo3D && Demo3D.ready', timeout=40000); check(True, '3D 示範老師載入')
+    except Exception:
+        check(False, '3D 示範老師載入（Three.js）')
+    t.wait_for_timeout(600)
+    check(t.locator('#demoIntro canvas').count() == 1, '開場示範影片裡是 3D 畫面')
+    f0 = t.evaluate('Demo3D.stats().frames'); t.wait_for_timeout(800)
+    check(t.evaluate('Demo3D.stats().frames') > f0 + 5, '3D 示範在動 %d → %d 張' % (f0, t.evaluate('Demo3D.stats().frames')))
+    check(t.evaluate("Demo3D.stats().move") == 'clap', '示範的是目前的動作（拍拍手）')
+    w = t.evaluate("parseFloat(document.getElementById('vprog').style.width) || 0")
+    check(0 < w < 100, '示範進度條 %.0f%%' % w)
+    check(t.evaluate("_sex.R.introMs") >= 2 * 1.5 * 1000 + 3000, '示範至少兩次再倒數（%d ms）' % t.evaluate("_sex.R.introMs"))
     t.screenshot(path=os.path.join(OUT, '03_intro.png'))
-    skip_intro(t); t.wait_for_timeout(1700)
+    t.click('[data-act=replay]'); t.wait_for_timeout(200)
+    check(t.evaluate("_sex.R.until - performance.now()") > t.evaluate("_sex.R.introMs") - 500, '再看一次：示範從頭開始')
+    t.click('[data-act=startNow]'); t.wait_for_timeout(400)
+    check(t.is_visible('#cdNum') and t.inner_text('#cdNum') in ('1', '2', '3'), '我會了，開始 → 直接 3、2、1 倒數')
+    t.screenshot(path=os.path.join(OUT, '03b_countdown.png'))
+    t.wait_for_timeout(3200)
+    check(t.evaluate('_sex.R.phase') == 'go', '倒數完開始做')
+    check(t.locator('#demoRun canvas').count() == 1, '做操時左邊是 3D 老師')
+    t.wait_for_timeout(1700)
     check(t.evaluate('_sex.R.count') >= 1, '節拍模式自動數 %s' % t.evaluate('_sex.R.count'))
     t.screenshot(path=os.path.join(OUT, '04_beat.png'))
     t.wait_for_timeout(7000)
@@ -84,7 +105,8 @@ with sync_playwright() as p:
     check('沒看到人' in t.inner_text('#camHint'), '鏡頭提示沒看到人')
     t.evaluate("_sex.ACT.plus()"); t.wait_for_timeout(300)
     check(t.inner_text('#cntNum') == '1', '＋1 補數')
-    t.evaluate("(() => { _sex.R.lastRep = performance.now() - 21000; })()"); t.wait_for_timeout(500)
+    # 模擬「人在畫面裡、只是一直沒數到」：看不清楚的累計歸零，避免先觸發自動改節拍
+    t.evaluate("(() => { _sex.R.missMs = -60000; _sex.R.lastRep = performance.now() - 21000; })()"); t.wait_for_timeout(500)
     check(t.is_visible('.stall'), '20 秒沒數到 → 提醒')
     t.screenshot(path=os.path.join(OUT, '07_cam_run.png'))
     t.click('[data-act=toBeat]'); t.wait_for_timeout(400)
@@ -99,7 +121,14 @@ with sync_playwright() as p:
     c1 = t.evaluate('_sex.R.count'); t.wait_for_timeout(3300)
     check(t.evaluate('_sex.R.count') > c1, '改跟節拍後繼續數 %d → %d' % (c1, t.evaluate('_sex.R.count')))
     t.screenshot(path=os.path.join(OUT, '07b_autobeat.png'))
-    t.click('.ctl [data-act=quit]'); t.wait_for_timeout(400)
+    t.evaluate('_sex.ACT.quit()'); t.wait_for_timeout(400)   # 可能已經做完進入休息畫面，按鈕被蓋住，直接結束
+    # 動作示範頁
+    t.click('[data-act=home]'); t.click('[data-act=pick]'); t.click('[data-act=demos]'); t.wait_for_timeout(600)
+    check(t.locator('#demoGal canvas').count() == 1 and t.locator('.mlist button').count() == 7, '動作示範頁：7 個動作＋3D 畫面')
+    for mid in ['armsUp', 'chest', 'bend', 'march']:
+        t.click('[data-act=demoPick][data-id=%s]' % mid); t.wait_for_timeout(900)
+        check(t.evaluate('Demo3D.stats().move') == mid, '示範頁切換到 ' + mid)
+        t.screenshot(path=os.path.join(OUT, '09_demo_%s.png' % mid))
     # 設定
     t.click('[data-act=home]'); t.click('[data-act=settings]'); t.locator('.set-sec summary', has_text='字的大小').click(); t.click('[data-set=fs][data-v=xl]'); t.wait_for_timeout(200)
     check(t.evaluate('document.documentElement.dataset.fs') == 'xl', '特大字')

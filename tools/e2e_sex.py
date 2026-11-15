@@ -91,6 +91,15 @@ with sync_playwright() as p:
     check(t.evaluate('_sex.R.mode') == 'beat' and t.evaluate('!document.querySelector("#camBox")'), '改跟節拍 → 關鏡頭')
     t.click('.ctl [data-act=quit]'); t.wait_for_timeout(400)
     check(t.evaluate('_sex.V.scr') == 'done', '中途結束：有做的部分有記錄')
+    # 鏡頭看不清楚（假畫面沒有人）超過 4 秒 → 這個動作自動改跟節拍數
+    t.click('[data-act=home]'); t.click('[data-act=ready]'); t.click('[data-mode=cam]')
+    t.wait_for_function('_sex.V.camReady', timeout=20000); t.wait_for_function("document.getElementById('checks') && document.getElementById('checks').textContent.length > 0", timeout=60000)
+    t.click('[data-act=go]'); t.wait_for_timeout(300); skip_intro(t); t.wait_for_timeout(5200)
+    check(t.evaluate('_sex.R.moveBeat') and '改成跟著' in t.inner_text('#camBox'), '看不清楚 4 秒 → 這個動作改跟節拍（鏡頭仍開著）')
+    c1 = t.evaluate('_sex.R.count'); t.wait_for_timeout(3300)
+    check(t.evaluate('_sex.R.count') > c1, '改跟節拍後繼續數 %d → %d' % (c1, t.evaluate('_sex.R.count')))
+    t.screenshot(path=os.path.join(OUT, '07b_autobeat.png'))
+    t.click('.ctl [data-act=quit]'); t.wait_for_timeout(400)
     # 設定
     t.click('[data-act=home]'); t.click('[data-act=settings]'); t.locator('.set-sec summary', has_text='字的大小').click(); t.click('[data-set=fs][data-v=xl]'); t.wait_for_timeout(200)
     check(t.evaluate('document.documentElement.dataset.fs') == 'xl', '特大字')

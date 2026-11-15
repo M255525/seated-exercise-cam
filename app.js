@@ -140,7 +140,7 @@ function startRun(){
 function cur(){ return R && E.moveById[R.plan[R.i].id]; }
 function introMove(){
   var m = cur(), st = R.plan[R.i];
-  R.phase = 'intro'; R.count = 0; R.counter = R.mode === 'cam' ? E.makeCounter(m.id) : null; R.stall = false;
+  R.phase = 'intro'; R.count = 0; R.counter = R.mode === 'cam' ? E.makeCounter(m.id) : null; R.stall = false; R.moveBeat = false; R.missMs = 0;
   var txt = (R.i === 0 ? '我們開始囉。' : '下一個動作，') + '第' + E.zhNum(R.i + 1) + '個：' + m.n + '，做' + E.zhNum(st.n) + '次。' + m.say;
   R.introMs = SET.voice ? Math.max(5200, Array.from(txt).length * (SET.rate === 'slow' ? 270 : 230) + 1800) : 5200;   // 口令唸完再開始
   R.until = performance.now() + R.introMs;
@@ -186,12 +186,15 @@ function loop(){
   drawFigure($('fig'), m.id, R.phase === 'go' || R.phase === 'intro' ? u : 0);
   if(R.phase === 'intro'){ var left = Math.ceil((R.until - now) / 1000); var c = $('cdNum'); if(c) c.textContent = left > 3 ? '準備' : Math.max(1, left); if(now >= R.until) goMove(); return; }
   if(R.phase === 'rest'){ var r = $('restNum'); if(r) r.textContent = Math.max(0, Math.ceil((R.until - now) / 1000)); if(now >= R.until) nextMove(); return; }
-  if(R.mode === 'cam'){
-    var lm = detect(); drawSkel($('skel'), lm);
+  if(R.mode === 'cam'){ var lm = detect(); drawSkel($('skel'), lm); }
+  if(R.mode === 'cam' && !R.moveBeat){
     var res = R.counter.update(E.pick(lm, aspect()), now / 1000);
     var h = $('camHint'); if(h) h.textContent = res.hint || '';
     if(res.rep){ R.count = R.counter.count - 1; addRep(); }
     if(!R) return;
+    // 鏡頭一直看不到這個動作需要的部位（例如坐很近看不到膝蓋）→ 這個動作改跟節拍數
+    R.missMs = res.miss ? R.missMs + dt : Math.max(0, R.missMs - dt);
+    if(R.missMs > 4000){ R.moveBeat = true; R.beatAt = now; R.stall = false; say('鏡頭看不清楚這個動作，這個動作改成跟著節拍做。', true); render(); return; }
     if(!R.stall && now - R.lastRep > 20000){ R.stall = true; render(); say('鏡頭好像沒有數到，可以按加一，或換成跟著節拍做。'); }
   } else {
     var per = m.tempo * 1000, b = $('beatBar'); if(b) b.style.width = Math.min(100, (now - R.beatAt) / per * 100) + '%';
@@ -228,7 +231,7 @@ function readyView(){
   return topBar() + '<section class="card"><h2>要怎麼做？</h2><div class="modes">' +
     '<button class="mode" data-mode="cam" aria-pressed="' + (V.mode === 'cam') + '"><b>📷 用鏡頭幫我數</b><span>電腦或手機鏡頭看你做，做到了自動數一次。影像只在這台裝置上分析，不錄影、不上傳。</span></button>' +
     '<button class="mode" data-mode="beat" aria-pressed="' + (V.mode === 'beat') + '"><b>🎵 跟著節拍做</b><span>不開鏡頭，跟著語音「一、二、三…」做。沒有鏡頭、或很多人一起做時用這個。</span></button></div></section>' +
-    (V.mode === 'cam' ? '<section class="card"><h2 style="font-size:1.2rem">先讓鏡頭看到你</h2><p class="lead">坐在椅子上，把裝置放在前面約 1.5～2 公尺、跟胸口差不多高，讓頭、肩膀、雙手都在畫面裡；要做踏步的話膝蓋也要看得到。</p>' +
+    (V.mode === 'cam' ? '<section class="card"><h2 style="font-size:1.2rem">先讓鏡頭看到你</h2><p class="lead">坐近坐遠都可以：<b>坐在桌前（約 60 公分）</b>看得到頭和肩膀就能用；<b>坐遠一點（1.5～2 公尺）</b>連雙手、膝蓋都看得到，能自動數的動作最多。鏡頭看不清楚的動作，會自動改成跟著節拍做。</p>' +
       '<div class="stage" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)"><div class="pane"><div class="cambox" id="camBox"><canvas id="skel"></canvas>' + (V.camErr ? '<div class="camhint">' + esc(V.camErr) + '</div>' : V.camReady ? '' : '<div class="camhint">正在開啟鏡頭…第一次會問你能不能用鏡頭，請按「允許」</div>') + '</div></div>' +
       '<div><div class="checks" id="checks"></div><div id="camSel"></div></div></div></section>' : '') +
     '<button class="big sun" data-act="go">' + (V.mode === 'cam' ? '✅ 看到了，開始！' : '▶ 開始') + '</button>' + footer();
@@ -236,17 +239,18 @@ function readyView(){
 function paintCheck(lm){
   var el = $('checks'); if(!el) return;
   var f = E.pick(lm, aspect()), okp = function(k){ return f && f[k] && (f[k].v == null || f[k].v > .5); };
-  var key = !lm ? 'none' : [okp('nose'), okp('ls') && okp('rs'), okp('lw') && okp('rw'), okp('lk') && okp('rk')].join();
+  var key = !lm ? 'none' : [okp('nose'), okp('ls') && okp('rs'), (okp('lw') && okp('rw')) || (okp('le') && okp('re')), okp('lk') && okp('rk')].join();
   if(el.dataset.k === key) return; el.dataset.k = key;
   el.innerHTML = !lm ? '<div class="n">還沒看到人，請坐到鏡頭前面</div>' :
-    '<div class="' + (okp('nose') ? 'y' : 'n') + '">看得到頭</div><div class="' + (okp('ls') && okp('rs') ? 'y' : 'n') + '">看得到兩邊肩膀</div><div class="' + (okp('lw') && okp('rw') ? 'y' : 'n') + '">看得到雙手</div><div class="' + (okp('lk') && okp('rk') ? 'y' : 'n') + '">看得到膝蓋（踏步才需要）</div>';
+    '<div class="' + (okp('nose') ? 'y' : 'n') + '">看得到頭</div><div class="' + (okp('ls') && okp('rs') ? 'y' : 'n') + '">看得到兩邊肩膀</div><div class="' + ((okp('lw') && okp('rw')) || (okp('le') && okp('re')) ? 'y' : 'n') + '">看得到雙手或手肘（擴胸、拍手要看得到手）</div><div class="' + (okp('lk') && okp('rk') ? 'y' : 'n') + '">看得到膝蓋（踏步才需要；坐近看不到沒關係）</div>';
 }
 function runView(){
   var m = cur(), st = R.plan[R.i];
   var h = '<div class="top"><h1>🪑 ' + esc(courseName(SET.course)) + '</h1><span class="small">第 ' + (R.i + 1) + ' / ' + R.plan.length + ' 個動作</span></div>' +
     '<div class="dots">' + R.plan.map(function(p, i){ return '<i class="' + (i < R.i ? 'done' : i === R.i ? 'cur' : '') + '" title="' + esc(E.moveById[p.id].n) + '"></i>'; }).join('') + '</div>' +
     '<div class="stage"><div class="pane"><div class="hd"><b>' + m.ic + ' ' + esc(m.n) + '</b><span>做 ' + st.n + ' 次</span></div><div class="figbox"><canvas id="fig"></canvas></div><div class="howto">' + esc(m.say) + '<span class="small">' + esc(m.how) + '　💡 ' + esc(m.tip) + '</span></div></div>';
-  if(R.mode === 'cam') h += '<div class="pane"><div class="cambox" id="camBox"><canvas id="skel"></canvas><div class="counter" id="cnt"><b id="cntNum">' + R.count + '</b><span>/ ' + st.n + ' 次</span></div><div class="camhint" id="camHint"></div></div></div>';
+  if(R.mode === 'cam') h += '<div class="pane"><div class="cambox" id="camBox"><canvas id="skel"></canvas><div class="counter" id="cnt"><b id="cntNum">' + R.count + '</b><span>/ ' + st.n + ' 次</span></div>' +
+    (R.moveBeat ? '<div class="camhint">🎵 鏡頭看不清楚這個動作，改成跟著「一、二、三…」做<div class="ring" style="margin:.35rem auto 0"><i id="beatBar"></i></div></div>' : '<div class="camhint" id="camHint"></div>') + '</div></div>';
   else h += '<div class="pane"><div class="beat"><b id="cntNum">' + R.count + '</b><span>/ ' + st.n + ' 次</span><div class="ring"><i id="beatBar"></i></div><span class="small" style="margin-top:.4rem">跟著「一、二、三…」做</span></div></div>';
   h += '</div>' + (R.stall ? '<div class="stall">🤔 鏡頭好像沒有數到。確認上半身都在畫面裡；也可以按「＋1」自己數，或「改跟節拍做」。</div>' : '') +
     '<div class="ctl"><button class="big alt" data-act="pause">' + (R.paused ? '▶ 繼續' : '⏸ 暫停') + '</button><button class="big alt" data-act="plus">＋1</button><button class="big alt" data-act="' + (R.mode === 'cam' ? 'toBeat' : 'skip') + '">' + (R.mode === 'cam' ? '🎵 改跟節拍' : '⏭ 下一個') + '</button><button class="big red" data-act="quit">✖ 結束</button></div>';

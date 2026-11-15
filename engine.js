@@ -9,9 +9,9 @@ var LM = {nose:0, ls:11, rs:12, le:13, re:14, lw:15, rw:16, lh:23, rh:24, lk:25,
 
 /* ---------- 動作 ---------- */
 var MOVES = [
-  {id:'armsUp', n:'雙手舉高', ic:'🙌', need:['nose', 'ls', 'rs', 'lw', 'rw'], tempo:3,
+  {id:'armsUp', n:'雙手舉高', ic:'🙌', need:['nose', 'ls', 'rs'], tempo:3,
    say:'雙手慢慢往上舉高，舉到頭頂，再慢慢放下來。', how:'手舉到頭頂上方算一次，放下來再舉下一次。', tip:'肩膀不舒服就舉到自己舒服的高度就好。'},
-  {id:'altArms', n:'左右手輪流舉高', ic:'🙋', need:['nose', 'ls', 'rs', 'lw', 'rw'], tempo:2.5,
+  {id:'altArms', n:'左右手輪流舉高', ic:'🙋', need:['nose', 'ls', 'rs'], tempo:2.5,
    say:'先舉左手，放下，再舉右手，左右輪流。', how:'每舉一隻手算一次。', tip:'舉手時背可以靠著椅背，不要駝背。'},
   {id:'chest', n:'擴胸運動', ic:'🫁', need:['ls', 'rs', 'lw', 'rw'], tempo:3,
    say:'雙手在胸前合起來，再往兩邊打開，像在抱一棵大樹。', how:'手往兩邊打開算一次。', tip:'打開時慢慢吸氣，合起來時慢慢吐氣。'},
@@ -53,7 +53,7 @@ function check(f, need){
   if(!ok(f.ls) || !ok(f.rs)) return {ok:false, hint:'請讓兩邊肩膀都在畫面裡'};
   var S = d2(f.ls, f.rs);
   if(S < .07) return {ok:false, hint:'離鏡頭太遠了，請坐近一點'};
-  if(S > .75) return {ok:false, hint:'離鏡頭太近了，請坐遠一點'};
+  if(S > 1.15) return {ok:false, hint:'離鏡頭太近了，請坐遠一點'};
   var miss = (need || []).filter(function(k){ return !ok(f[k]); });
   if(miss.indexOf('lk') >= 0 || miss.indexOf('rk') >= 0) return {ok:false, hint:'看不到膝蓋：把鏡頭放低一點，或改用「跟著節拍做」'};
   if(miss.indexOf('lw') >= 0 || miss.indexOf('rw') >= 0) return {ok:false, hint:'看不到雙手：請坐遠一點，讓手也在畫面裡'};
@@ -85,17 +85,20 @@ function makeCounter(id){
   var api = {id:id, get count(){ return st.count; }, set count(v){ st.count = v; }, state:st,
     update:function(f, t){
       var c = check(f, m.need), out = {count:st.count, rep:false, hint:c.hint, phase:st.phase};
-      if(!c.ok){ st.hold = {}; return out; }
+      if(!c.ok){ st.hold = {}; out.miss = true; return out; }
       f = smooth(f);
       var S = c.S, sy = shoulderY(f), r = false;
+      // 坐很近時手會跑出畫面：看不到手腕就改看手肘；手腕、手肘都看不到（掉到畫面下方）就當作手放下
+      function armUp(w, e, k){ return ok(w) ? w.y < f.nose.y - k * S : ok(e) && e.y < sy - .3 * S; }
+      function armDown(w, e){ return ok(w) ? w.y > sy + .2 * S : !ok(e) || e.y > sy + .25 * S; }
       if(id === 'armsUp'){
-        var up = f.lw.y < f.nose.y - .15 * S && f.rw.y < f.nose.y - .15 * S, down = f.lw.y > sy + .25 * S && f.rw.y > sy + .25 * S;
+        var up = armUp(f.lw, f.le, .15) && armUp(f.rw, f.re, .15), down = armDown(f.lw, f.le) && armDown(f.rw, f.re);
         if(held('d', down)) st.phase = 'down';
         else if(held('u', up) && st.phase === 'down'){ st.phase = 'up'; r = rep(t); }
         out.hint = st.phase === 'up' ? '放下來' : st.phase === 'down' ? '舉高！' : '先把手放下來準備';
       } else if(id === 'altArms'){
-        [['l', f.lw], ['r', f.rw]].forEach(function(s){
-          var u = s[1].y < f.nose.y - .1 * S, dn = s[1].y > sy + .2 * S;
+        [['l', f.lw, f.le], ['r', f.rw, f.re]].forEach(function(s){
+          var u = armUp(s[1], s[2], .1), dn = armDown(s[1], s[2]);
           if(held('d' + s[0], dn)) st.side[s[0]] = 'down';
           else if(held('u' + s[0], u) && st.side[s[0]] === 'down'){ st.side[s[0]] = 'up'; if(rep(t)) r = true; }
         });
@@ -112,10 +115,10 @@ function makeCounter(id){
         else if(held('c', dd < .45 * S) && st.phase === 'apart'){ st.phase = 'clap'; r = rep(t); }
         out.hint = st.phase === 'clap' ? '打開' : '拍手！';
       } else if(id === 'shrug'){
-        var v = (sy - f.nose.y) / S;
+        var v0 = (sy - f.nose.y) / S, v = st.vs = st.vs == null ? v0 : st.vs + (v0 - st.vs) * .4;   // 再平滑一次（肩寬本身也會抖）
         if(!learnBase(v)){ out.hint = '肩膀放鬆，先別動…'; return out; }
-        if(held('d', v > st.base * .9)){ st.phase = 'down'; st.base = st.base * .98 + v * .02; }
-        else if(held('u', v < st.base * .75) && st.phase === 'down'){ st.phase = 'up'; r = rep(t); }
+        if(held('d', v > st.base * .85)){ st.phase = 'down'; st.base = st.base * .98 + v * .02; }
+        else if(held('u', v < st.base * .65) && st.phase === 'down'){ st.phase = 'up'; r = rep(t); }
         out.hint = st.phase === 'up' ? '放鬆下來' : '肩膀往上聳';
       } else if(id === 'bend'){
         var deg = Math.atan2(f.ls.y - f.rs.y, f.ls.x - f.rs.x) * 180 / Math.PI;  // 往本人左邊彎→左肩下降→正
@@ -129,6 +132,7 @@ function makeCounter(id){
           var key = 'b' + s[0];
           if(!learnBase(s[1].y, key)) return;
           var b = st[key];
+          if(s[1].y > b) st[key] = b = b * .7 + s[1].y * .3;   // 起始值快速往「腳放下」的位置修正（開始時膝蓋若是抬著的也沒關係）
           if(held('d' + s[0], s[1].y > b - .08 * S)){ st.side[s[0]] = 'down'; st[key] = b * .97 + s[1].y * .03; }
           else if(held('u' + s[0], s[1].y < b - .22 * S) && st.side[s[0]] === 'down'){ st.side[s[0]] = 'up'; if(rep(t)) r = true; }
         });

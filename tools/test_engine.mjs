@@ -10,8 +10,10 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } }
 let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 function frame(p, opt = {}) {
   const S = opt.S || .22, cx = opt.cx || .9, cy = opt.cy || .62, j = opt.jit == null ? .012 : opt.jit;
-  const P = (k) => { const q = p[k]; return { x: cx - q[0] * S + (rnd() - .5) * j * S * 4, y: cy + q[1] * S + (rnd() - .5) * j * S * 4, v: (opt.hide || []).includes(k) ? .1 : .95 }; };
-  return { nose: P('head'), ls: P('lsh'), rs: P('rsh'), lw: P('lha'), rw: P('rha'), lh: P('lhip'), rh: P('rhip'), lk: P('lkn'), rk: P('rkn') };
+  // clip：超出畫面（寬 4/3、高 1）的點，MediaPipe 會給很低的 visibility
+  const out = (x, y) => opt.clip && (x < 0 || x > 4 / 3 || y < 0 || y > 1);
+  const P = (k) => { const q = p[k]; const x = cx - q[0] * S + (rnd() - .5) * j * S * 4, y = cy + q[1] * S + (rnd() - .5) * j * S * 4; return { x, y, v: (opt.hide || []).includes(k) || out(x, y) ? .1 : .95 }; };
+  return { nose: P('head'), ls: P('lsh'), rs: P('rsh'), le: P('lel'), re: P('rel'), lw: P('lha'), rw: P('rha'), lh: P('lhip'), rh: P('rhip'), lk: P('lkn'), rk: P('rkn') };
 }
 function lerp(a, b, t) { const o = {}; Object.keys(a).forEach(k => { o[k] = [a[k][0] + (b[k][0] - a[k][0]) * t, a[k][1] + (b[k][1] - a[k][1]) * t]; }); return o; }
 // 模擬做 n 次：A→B→A 平滑來回，每次 period 秒，30fps
@@ -31,6 +33,22 @@ E.MOVES.forEach(m => {
     ok(got === want, m.n + ' 情況' + oi + '：數到 ' + got + '（應為 ' + want + '）');
   });
 });
+// 1b. 坐很近（筆電在桌上約 60 公分）：只看得到頭、肩膀、上胸；手放下會掉出畫面下方、舉高時手腕剛好在上緣
+const NEAR = { S: .88, cx: .67, cy: 1.95, clip: true };
+['armsUp', 'altArms', 'shrug', 'bend'].forEach(id => {
+  [NEAR, Object.assign({}, NEAR, { jit: .02 }), Object.assign({}, NEAR, { cy: 1.85 })].forEach((o, oi) => {
+    const got = simulate(id, 6, o), want = 6 * (perCycle[id] || 1);
+    ok(got === want, E.moveById[id].n + ' 坐很近' + oi + '：數到 ' + got + '（應為 ' + want + '）');
+  });
+});
+// 看不到的動作要回報 miss（畫面會自動改成跟著節拍數），而且不能亂數
+['chest', 'clap', 'march'].forEach(id => {
+  const c = E.makeCounter(id), [A, B] = E.FIG[id]; let t = 0, miss = 0;
+  for (let i = 0; i < 180; i++, t += 1 / 30){ const r = c.update(frame(i % 60 < 30 ? A : B, NEAR), t); if (r.miss) miss++; }
+  ok(miss > 150 && c.count === 0, E.moveById[id].n + ' 坐很近看不到 → miss ' + miss + '、不亂數 ' + c.count);
+});
+// 只露出頭肩、手放下（都在畫面下方）站著不動：舉手類不可計數
+{ const c = E.makeCounter('armsUp'); let t = 0; for (let i = 0; i < 300; i++, t += 1 / 30) c.update(frame(E.FIG.armsUp[0], Object.assign({}, NEAR, { jit: .05 })), t); ok(c.count === 0, '坐很近手放下不動不計數 ' + c.count); }
 // 2. 靜止不動、抖動很大也不會亂數
 E.MOVES.forEach(m => {
   const c = E.makeCounter(m.id); let t = 0;
@@ -44,7 +62,7 @@ E.MOVES.forEach(m => {
 // 4. 缺點提示
 const A = E.FIG.march[0];
 ok(/膝蓋/.test(E.makeCounter('march').update(frame(A, { hide: ['lkn', 'rkn'] }), 0).hint), '看不到膝蓋要提示');
-ok(/雙手/.test(E.makeCounter('armsUp').update(frame(A, { hide: ['lha'] }), 0).hint), '看不到手要提示');
+ok(/雙手/.test(E.makeCounter('clap').update(frame(A, { hide: ['lha'] }), 0).hint), '看不到手要提示（拍手）');
 ok(/肩膀/.test(E.makeCounter('shrug').update(frame(A, { hide: ['lsh'] }), 0).hint), '看不到肩膀要提示');
 ok(/太遠/.test(E.makeCounter('clap').update(frame(A, { S: .04 }), 0).hint), '太遠要提示');
 ok(/沒看到人/.test(E.makeCounter('clap').update(null, 0).hint), '沒人要提示');

@@ -3,7 +3,7 @@
 給長輩（或久坐的人）的坐姿健康操：坐在椅子上跟著示範小人與語音口令做，**攝影機用 MediaPipe PoseLandmarker 幫忙數次數**；也可以不開鏡頭「跟著節拍做」（團體帶操、沒有鏡頭、在意隱私時用）。做完蓋「今日完成」章、記連續天數。2026-11-15 建立（使用者從「還有那些軟體的方向」清單挑了「坐姿健康操（攝影機）」）。畫面是**晨光公園風**（暖黃天空＋太陽、草綠、大字大按鈕，字級 20px／特大 24px）。
 
 - 純靜態：`index.html`（CSS）＋`engine.js`（`window.SEX`：動作、課程、計次狀態機、示範小人姿勢、紀錄；node 可 require）＋`app.js`（畫面、攝影機、語音、流程）＋`manual.html`＋PWA。無序號、無 AI。
-- 本機 port **8888**（`.claude/launch.json` 的 `seated-exercise-cam`）。visitor-badge `m255525.seatedexercisecam`。
+- 本機 port **8888**（`.claude/launch.json` 的 `seated-exercise-cam`）。visitor-badge `m255525.seatedexercisecam`。**2026-11-15 已上線** <https://m255525.github.io/seated-exercise-cam/>（repo 由使用者自己 `gh repo create`；先開 Pages，push 觸發的部署直接成功）。程式牆在 `REPO_META`，github-dashboard 與 AI 工具導航（`TOOLS`＋新情境「動一動、做健康操」）已補。
 - 攝影機骨架沿用體感遊戲（`initCamera`／`listCams`／`preferredCam` 偏好外接 USB 鏡頭、記住 `sex.cam`）；姿勢辨識同 boxing-cam：`@mediapipe/tasks-vision@0.10.14` ＋ `pose_landmarker_lite`，GPU 失敗退 CPU。影像只在瀏覽器分析，不錄影不上傳（警語、手冊都寫）。
 
 ## 動作判定（engine.js，數值為本工具自訂，不是醫療／復健標準）
@@ -20,7 +20,7 @@
 - localStorage 前綴 `sex.`：`set`、`custom`、`log`（`{日期:{sec,reps,n}}`）、`mode`、`cam`、`warnSeen`、`marquee`。測試掛鉤 `window._sex`。
 
 ## 驗證
-- `python tools/e2e_sex.py <截圖資料夾>`（先開 8888；`SEX_BASE` 可測線上版）：**用 Chrome 假攝影機**（`--use-fake-device-for-media-stream`，不會拍到真人）。涵蓋首訪警語、自訂課程、節拍模式完整跑完（說明、自動數、休息、暫停不數、完成蓋章、紀錄、月曆）、假鏡頭開啟＋MediaPipe 從 CDN 載入＋沒人提示、＋1、20 秒提醒、改跟節拍關鏡頭、中途結束有記錄、特大字、375px。2026-11-15 本機全過、無 console 錯誤。
+- `python tools/e2e_sex.py <截圖資料夾>`（先開 8888；`SEX_BASE` 可測線上版）：**用 Chrome 假攝影機**（`--use-fake-device-for-media-stream`，不會拍到真人）。涵蓋首訪警語、自訂課程、節拍模式完整跑完（說明、自動數、休息、暫停不數、完成蓋章、紀錄、月曆）、假鏡頭開啟＋MediaPipe 從 CDN 載入＋沒人提示、＋1、20 秒提醒、改跟節拍關鏡頭、中途結束有記錄、特大字、375px。2026-11-15 本機全過、無 console 錯誤；上線後設 `SEX_BASE=https://m255525.github.io/seated-exercise-cam/` 再跑一輪全過。
 - **真人對著鏡頭的判定手感未實測**（只用合成座標測過），長輩實際使用的距離、光線、衣服顏色可能要再調門檻。
 
 ## 標準配備
